@@ -25,7 +25,6 @@ class Database:
 
             if not exists:
                 print(f"Создаем базу данных: {DB_CONFIG['database']}")
-                # Создаем базу данных
                 create_db_query = sql.SQL("CREATE DATABASE {}").format(
                     sql.Identifier(DB_CONFIG['database'])
                 )
@@ -197,7 +196,8 @@ class Database:
 
                 word_id = cursor.fetchone()[0]
                 self.connection.commit()
-                print(f"Добавлено пользовательское слово: {russian_word} - {english_word}")
+                print(
+                    f"Добавлено пользовательское слово: {russian_word} - {english_word}")
                 return word_id
 
         except Exception as e:
@@ -237,7 +237,8 @@ class Database:
                 """, (user_id,))
 
                 words = cursor.fetchall()
-                print(f"Получено {len(words)} пользовательских слов для пользователя с ID: {user_id}")
+                print(
+                    f"Получено {len(words)} пользовательских слов для пользователя с ID: {user_id}")
                 return words
 
         except Exception as e:

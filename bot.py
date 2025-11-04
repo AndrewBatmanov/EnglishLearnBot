@@ -1,7 +1,9 @@
 import random
+
 from telebot import types, TeleBot, custom_filters
 from telebot.storage import StateMemoryStorage
 from telebot.handler_backends import State, StatesGroup
+
 from database import Database
 from parameters import BOT_TOKEN
 
@@ -11,8 +13,6 @@ if not BOT_TOKEN:
 
 db = Database()
 bot = TeleBot(BOT_TOKEN, state_storage=StateMemoryStorage())
-
-buttons = []
 
 
 class Command:
@@ -51,7 +51,6 @@ def create_cards(message):
         random.shuffle(all_options)
 
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-        global buttons
         buttons = []
 
         for option in all_options:
@@ -75,6 +74,7 @@ def create_cards(message):
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
             data['target_word'] = english_word
             data['translate_word'] = russian_word
+            data['all_options'] = all_options   # Сохраняем варианты ответов
 
     except Exception as e:
         print(f"Ошибка: {e}")
@@ -90,7 +90,8 @@ def next_cards(message):
 def add_word(message):
     bot.send_message(
         message.chat.id,
-        "Введите слово в формате: русское - английское\nНапример: машина - car",
+        "Введите слово в формате: русское - английское\n"
+        "Например: машина - car",
         reply_markup=types.ReplyKeyboardRemove()
     )
     bot.set_state(message.from_user.id, MyStates.adding_word, message.chat.id)
@@ -114,13 +115,22 @@ def process_add_word(message):
             if russian_word and english_word:
                 word_id = db.add_user_word(user_id, russian_word, english_word)
                 if word_id:
-                    bot.send_message(message.chat.id, f"✅ Слово '{russian_word} - {english_word}' добавлено!")
+                    bot.send_message(
+                        message.chat.id,
+                        f"✅ Слово '{russian_word} - {english_word}' добавлено!"
+                    )
                 else:
-                    bot.send_message(message.chat.id, "❌ Ошибка при добавлении слова")
+                    bot.send_message(
+                        message.chat.id,
+                        "❌ Ошибка при добавлении слова"
+                    )
         else:
-            bot.send_message(message.chat.id, "Используйте формат: русское - английское")
+            bot.send_message(
+                message.chat.id,
+                "Используйте формат: русское - английское"
+            )
 
-    except Exception as e:
+    except Exception as error:
         bot.send_message(message.chat.id, "❌ Ошибка при обработке")
 
     bot.delete_state(message.from_user.id, message.chat.id)
@@ -133,7 +143,10 @@ def delete_word(message):
     user_words = db.get_user_words(user_id)
 
     if not user_words:
-        bot.send_message(message.chat.id, "У вас пока нет пользовательских слов для удаления.")
+        bot.send_message(
+            message.chat.id,
+            "У вас пока нет пользовательских слов для удаления."
+        )
         return
 
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -141,7 +154,11 @@ def delete_word(message):
         markup.add(types.KeyboardButton(f"{russian} - {english}"))
     markup.add(types.KeyboardButton("Отмена"))
 
-    bot.send_message(message.chat.id, "Выберите слово для удаления:", reply_markup=markup)
+    bot.send_message(
+        message.chat.id,
+        "Выберите слово для удаления:",
+        reply_markup=markup
+    )
     bot.set_state(message.from_user.id, MyStates.deleting_word, message.chat.id)
 
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
@@ -160,7 +177,6 @@ def process_delete_word(message):
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
         user_words = data.get('user_words', [])
 
-    # Ищем слово для удаления
     for word_id, russian, english in user_words:
         if f"{russian} - {english}" == message.text:
             if db.delete_user_word(user_id, word_id):
@@ -188,18 +204,20 @@ def message_reply(message):
             return
 
         target_word = data['target_word']
+        all_options = data['all_options']  # Получаем сохраненные варианты ответов
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+
+        buttons = []
 
         if text == target_word:
             hint = f"✅ Правильно!\n{data['target_word']} -> {data['translate_word']}"
 
-            global buttons
             new_buttons = []
-            for btn in buttons:
-                if btn.text == text:
-                    new_buttons.append(types.KeyboardButton(btn.text + ' ✅'))
-                elif btn.text not in [Command.NEXT, Command.ADD_WORD, Command.DELETE_WORD]:
-                    new_buttons.append(btn)
+            for option in all_options:
+                if option == text:
+                    new_buttons.append(types.KeyboardButton(option + ' ✅'))
+                else:
+                    new_buttons.append(types.KeyboardButton(option))
 
             new_buttons.extend([
                 types.KeyboardButton(Command.NEXT),
@@ -211,13 +229,12 @@ def message_reply(message):
         else:
             hint = f"❌ Ошибка!\nПопробуйте ещё раз: 🇷🇺{data['translate_word']}"
 
-            # Обновляем кнопки
             new_buttons = []
-            for btn in buttons:
-                if btn.text == text:
-                    new_buttons.append(types.KeyboardButton(btn.text + ' ❌'))
-                elif btn.text not in [Command.NEXT, Command.ADD_WORD, Command.DELETE_WORD]:
-                    new_buttons.append(btn)
+            for option in all_options:
+                if option == text:
+                    new_buttons.append(types.KeyboardButton(option + ' ❌'))
+                else:
+                    new_buttons.append(types.KeyboardButton(option))
 
             new_buttons.extend([
                 types.KeyboardButton(Command.NEXT),
@@ -232,7 +249,7 @@ def message_reply(message):
 
 @bot.message_handler(func=lambda message: True)
 def handle_any_message(message):
-    """Обрабатывает любые сообщения и предлагает начать"""
+    """Обрабатывает любые сообщения и предлагает начать."""
     if message.text and message.text.startswith('/'):
         return
 
